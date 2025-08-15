@@ -131,10 +131,11 @@ class PatchApplier:
                 'end_index': i
             }
         elif action == 'Add':
-            # Parse Add content
+            # Parse Add content - preserve all whitespace after the '+'
             content = []
             while i < len(lines) and lines[i].strip() != '*** End Patch':
                 if lines[i].startswith('+'):
+                    # Remove only the '+' prefix, preserve all other whitespace
                     content.append(lines[i][1:])
                 i += 1
             return {
@@ -193,25 +194,28 @@ class PatchApplier:
             if line.strip() == '*** End Patch':
                 break
             if line.startswith('@@'):
-                # Start of next hunk
-                i -= 1
+                # Start of next hunk - don't include this line
                 break
             
             # Parse line based on prefix
             if line.startswith(' '):
                 # Context line
                 hunk_lines.append((' ', line[1:]))
+                i += 1
             elif line.startswith('-'):
                 # Removed line
                 hunk_lines.append(('-', line[1:]))
+                i += 1
             elif line.startswith('+'):
                 # Added line
                 hunk_lines.append(('+', line[1:]))
-            else:
-                # Might be end of hunk
+                i += 1
+            elif line.strip() == '':
+                # Empty line between hunks - stop here
                 break
-            
-            i += 1
+            else:
+                # Unknown line format - stop here
+                break
         
         return {
             'header': header,
@@ -315,41 +319,52 @@ class PatchApplier:
             if match_idx == -1:
                 return None
         
-        # Build the context and changes
+        # Separate context, removals, and additions
         context_before = []
         context_after = []
         removals = []
         additions = []
         
-        in_changes = False
-        for prefix, line in hunk_lines:
-            if prefix == ' ':
-                if in_changes:
-                    context_after.append(line)
-                else:
-                    context_before.append(line)
-            elif prefix == '-':
-                in_changes = True
+        # Parse the hunk lines to separate context, removals, and additions
+        i = 0
+        # First pass: collect context before changes
+        while i < len(hunk_lines) and hunk_lines[i][0] == ' ':
+            context_before.append(hunk_lines[i][1])
+            i += 1
+        
+        # Second pass: collect changes (removals and additions)
+        while i < len(hunk_lines) and hunk_lines[i][0] in ['-', '+']:
+            prefix, line = hunk_lines[i]
+            if prefix == '-':
                 removals.append(line)
             elif prefix == '+':
-                in_changes = True
                 additions.append(line)
+            i += 1
+        
+        # Third pass: collect context after changes
+        while i < len(hunk_lines) and hunk_lines[i][0] == ' ':
+            context_after.append(hunk_lines[i][1])
+            i += 1
         
         # Calculate the start position
-        start_idx = match_idx - len(context_before) + 1
-        if start_idx < 0:
-            start_idx = 0
+        # The header line should be the first context line
+        if context_before and context_before[0].strip() == header.strip():
+            start_idx = match_idx
+        else:
+            # Find where the context actually starts
+            start_idx = match_idx - len(context_before) + 1
+            if start_idx < 0:
+                start_idx = 0
         
-        # Verify context matches
-        expected_lines = context_before + removals + context_after
-        actual_lines = lines[start_idx:start_idx + len(expected_lines)]
+        # Calculate the end position
+        end_idx = start_idx + len(context_before) + len(removals) + len(context_after)
         
-        # Build new lines
+        # Build new lines array
         new_lines = lines[:start_idx]
         new_lines.extend(context_before)
         new_lines.extend(additions)
         new_lines.extend(context_after)
-        new_lines.extend(lines[start_idx + len(context_before) + len(removals) + len(context_after):])
+        new_lines.extend(lines[end_idx:])
         
         return new_lines
     
