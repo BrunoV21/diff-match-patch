@@ -20,6 +20,8 @@ python -m pip install diff-match-patch
 
 ## Usage
 
+### Standard Patch Format
+
 Generating a patchset (analogous to unified diff) between two texts:
 
 ```python
@@ -40,7 +42,128 @@ patches = dmp.patch_fromText(diff)
 new_text, _ = dmp.patch_apply(patches, text)
 ```
 
+### V4A-Compatible Patch Format
+
+This library now includes support for the V4A-Compatible patch format, which provides a structured way to apply file modifications, additions, and deletions.
+
+#### Format Specification
+
+The V4A-Compatible format uses patch blocks with three action types:
+
+1. **Update** - Modify existing files with hunks and context lines
+2. **Add** - Create new files
+3. **Delete** - Remove existing files
+
+#### Basic Usage
+
+```python
+from diff_match_patch import PatchApplier
+
+# Create a patch applier instance
+applier = PatchApplier()
+
+# Example: Update an existing file
+update_patch = """*** Begin Patch
+*** Update File: example.py
+@@ def hello():
+ def hello():
+     print("Hello")
+     # Some comment
+-     old_code()
++     new_code()
+     return True
+*** End Patch"""
+
+# Apply the patch to files in the current directory
+results = applier.apply_patch(update_patch, base_dir=".")
+for file_path, success, message in results:
+    print(f"{file_path}: {'✓' if success else '✗'} - {message}")
+```
+
+#### Patch Block Structure
+
+**Update existing file:**
+```
+*** Begin Patch
+*** Update File: path/to/file.ext
+@@ <exact context line from original file>
+ <context_line_1>
+ <context_line_2>
+ <context_line_3>
+- line_to_remove
++ line_to_add
+ <context_line_4>
+ <context_line_5>
+ <context_line_6>
+*** End Patch
+```
+
+**Add new file:**
+```
+*** Begin Patch
+*** Add File: path/to/new_file.ext
++ line 1 of new file
++ line 2 of new file
++ line 3 of new file
+*** End Patch
+```
+
+**Delete file:**
+```
+*** Begin Patch
+*** Delete File: path/to/file_to_delete.ext
+*** End Patch
+```
+
+#### Line Prefix Rules
+
+- ` ` (space) - Unchanged context line
+- `-` - Line to be removed
+- `+` - Line to be added
+- `@@` - Hunk header (contains exact context line from original)
+
+#### Multiple Operations
+
+You can combine multiple patch blocks in a single patch string:
+
+```python
+combined_patch = """*** Begin Patch
+*** Update File: config.py
+@@ DEBUG = False
+ # Configuration
+- DEBUG = False
++ DEBUG = True
+ VERSION = "1.0"
+*** End Patch
+
+*** Begin Patch
+*** Add File: new_module.py
++ def new_function():
++     return "Hello World"
+*** End Patch
+
+*** Begin Patch
+*** Delete File: old_module.py
+*** End Patch"""
+
+results = applier.apply_patch(combined_patch, base_dir="./project")
+```
+
+#### Parsing Patches
+
+You can also parse patches without applying them:
+
+```python
+blocks = applier.parse_patch(patch_text)
+for block in blocks:
+    print(f"Action: {block['action']}")
+    print(f"File: {block['file_path']}")
+    if block['action'] == 'Update':
+        print(f"Hunks: {len(block['hunks'])}")
+```
+
 ## Original README
+
 The Diff Match and Patch libraries offer robust algorithms to perform the
 operations required for synchronizing plain text.
 
